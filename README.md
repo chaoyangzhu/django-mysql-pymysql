@@ -3,13 +3,13 @@ django-mysql-pymysql
 
 This is a Django database backend for MySQL, using the PyMySQL database adapter. It is intended to be a drop-in replacement for the built-in MySQLdb backend, and leverages quite a bit of its code.
 
-It is currently experimental, and has only been tested against Django trunk (1.4-pre-alpha), and Vinay Sajip's Py3k branch on BitBucket (https://bitbucket.org/vinay.sajip/django). At the moment, it won't work with Django 1.3, as it uses Aymeric Augustin's timezone-aware datetime patch.
+This fork is updated to work for Django 1.5.2.
 
 
 Requirements
 ------------
 
-* Django trunk or Py3k Branch
+* Django 1.5.2
 * PyMySQL (patches here: https://github.com/clelland/PyMySQL)
 
 Installation
