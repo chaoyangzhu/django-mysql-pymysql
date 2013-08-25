@@ -1,8 +1,8 @@
 from django.db.backends import BaseDatabaseIntrospection
+from django.utils import six
 from pymysql import ProgrammingError, OperationalError
 from pymysql.constants import FIELD_TYPE
 import re
-from .py3 import iteritems
 
 foreign_key_re = re.compile(r"\sCONSTRAINT `[^`]*` FOREIGN KEY \(`([^`]*)`\) REFERENCES `([^`]*)` \(`([^`]*)`\)")
 
@@ -35,9 +35,20 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         return [row[0] for row in cursor.fetchall()]
 
     def get_table_description(self, cursor, table_name):
-        "Returns a description of the table, with the DB-API cursor.description interface."
+        """
+        Returns a description of the table, with the DB-API cursor.description interface.
+        """
+        # varchar length returned by cursor.description is an internal length,
+        # not visible length(#5725), use information_schema database to fix this
+        cursor.execute("""
+            SELECT column_name, character_maximum_length FROM information_schema.columns
+            WHERE table_name = %s AND table_schema = DATABASE()
+                AND character_maximum_length IS NOT NULL""", [table_name])
+        length_map = dict(cursor.fetchall())
+
         cursor.execute("SELECT * FROM %s LIMIT 1" % self.connection.ops.quote_name(table_name))
-        return cursor.description
+        return [line[:3] + (length_map.get(line[0], line[3]),) + line[4:]
+            for line in cursor.description]
 
     def _name_to_index(self, cursor, table_name):
         """
@@ -93,7 +104,7 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
         """
         Returns the name of the primary key column for the given table
         """
-        for column in iteritems(self.get_indexes(cursor, table_name)):
+        for column in six.iteritems(self.get_indexes(cursor, table_name)):
             if column[1]['primary_key']:
                 return column[0]
         return None
@@ -106,8 +117,18 @@ class DatabaseIntrospection(BaseDatabaseIntrospection):
              'unique': boolean representing whether it's a unique index}
         """
         cursor.execute("SHOW INDEX FROM %s" % self.connection.ops.quote_name(table_name))
+        # Do a two-pass search for indexes: on first pass check which indexes
+        # are multicolumn, on second pass check which single-column indexes
+        # are present.
+        rows = list(cursor.fetchall())
+        multicol_indexes = set()
+        for row in rows:
+            if row[3] > 1:
+                multicol_indexes.add(row[2])
         indexes = {}
-        for row in cursor.fetchall():
+        for row in rows:
+            if row[2] in multicol_indexes:
+                continue
             indexes[row[4]] = {'primary_key': (row[2] == 'PRIMARY'), 'unique': not bool(row[1])}
         return indexes
 
